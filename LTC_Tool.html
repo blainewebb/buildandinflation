@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LTC Build and Inflation Tool</title>
+    <!-- Tailwind CSS for Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React and Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Recharts Dependencies -->
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+        const { 
+            AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
+        } = Recharts;
+
+        // --- INLINE SVG ICONS (Replacing Lucide for stability) ---
+        const Icon = ({ name, className = "w-5 h-5" }) => {
+            const icons = {
+                "shield-check": <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM12 8v4m0 4h.01" />,
+                "user": <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m8-11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
+                "calculator": (
+                    <React.Fragment>
+                        <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
+                        <path d="M8 6h8m-8 4h8m-8 4h8m-4 4h4" />
+                    </React.Fragment>
+                ),
+                "settings-2": <path d="M20 7h-9m-4 0H4m12 5h3m-9 0H4m7 5h9m-4 0H4m8-14v4m-4 1v4m8 4v4" />,
+                "check-square": (
+                    <React.Fragment>
+                        <polyline points="9 11 12 14 22 4" />
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                    </React.Fragment>
+                ),
+                "arrow-down": <path d="M12 5v14M19 12l-7 7-7-7" />,
+                "alert-circle": (
+                    <React.Fragment>
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </React.Fragment>
+                ),
+                "trending-up": (
+                    <React.Fragment>
+                        <polyline points="23 6 13.5 17 8.5 12 1 20" />
+                        <polyline points="17 6 23 6 23 12" />
+                    </React.Fragment>
+                ),
+                "sliders": (
+                    <React.Fragment>
+                        <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+                        <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+                        <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+                        <line x1="2" y1="14" x2="6" y2="14" /><line x1="10" y1="8" x2="14" y2="8" /><line x1="18" y1="16" x2="22" y2="16" />
+                    </React.Fragment>
+                ),
+                "table": (
+                    <React.Fragment>
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" />
+                        <line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" />
+                    </React.Fragment>
+                ),
+                "chevron-right": <polyline points="9 18 15 12 9 6" />,
+                "check-circle-2": (
+                    <React.Fragment>
+                        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                        <path d="m9 12 2 2 4-4" />
+                    </React.Fragment>
+                )
+            };
+            return (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                    {icons[name] || <circle cx="12" cy="12" r="10" />}
+                </svg>
+            );
+        };
+
+        // --- COMPONENTS ---
+
+        const Sidebar = ({ activeTab, setActiveTab }) => (
+            <div className="w-full lg:w-72 bg-slate-900 text-white flex flex-col h-full lg:min-h-screen shadow-2xl">
+                <div className="p-8 flex items-center gap-3 border-b border-slate-800">
+                    <div className="bg-blue-600 p-2 rounded-lg">
+                        <Icon name="shield-check" className="w-6 h-6 text-white" />
+                    </div>
+                    <h1 className="font-black text-lg tracking-tight leading-tight uppercase">LTC Build Tool</h1>
+                </div>
+                <nav className="flex-1 p-6 space-y-2">
+                    <button 
+                        onClick={() => setActiveTab('build')}
+                        className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl transition-all duration-200 ${activeTab === 'build' ? 'bg-blue-600 shadow-lg shadow-blue-900/40 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                    >
+                        <Icon name="user" />
+                        <span className="font-bold">Build Gizmo</span>
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('calc')}
+                        className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl transition-all duration-200 ${activeTab === 'calc' ? 'bg-blue-600 shadow-lg shadow-blue-900/40 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                    >
+                        <Icon name="calculator" />
+                        <span className="font-bold">Benefit Calc</span>
+                    </button>
+                </nav>
+                <div className="p-6 border-t border-slate-800 text-[10px] text-slate-500 font-bold uppercase tracking-widest text-center">
+                    Gizmo Engine v2.0 • 2024
+                </div>
+            </div>
+        );
+
+        const BuildGizmoView = ({ gender, setGender, heightFt, setHeightFt, heightIn, setHeightIn, weight, setWeight, bmi, underwritingStatus }) => (
+            <div className="space-y-8 fade-in">
+                <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 pb-6">
+                    <div>
+                        <h2 className="text-3xl font-black text-slate-900 tracking-tight">Carrier Build Analysis</h2>
+                        <p className="text-slate-500 font-medium">Instant results based on height and weight thresholds.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {['BEST', 'STANDARD', 'SUBSTANDARD'].map(label => (
+                            <div key={label} className={`px-3 py-1.5 text-[10px] font-black rounded-lg border flex items-center gap-2 ${label === 'BEST' ? 'bg-green-50 text-green-700 border-green-100' : label === 'STANDARD' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                                <span className={`w-2 h-2 rounded-full ${label === 'BEST' ? 'bg-green-500' : label === 'STANDARD' ? 'bg-amber-500' : 'bg-red-500'}`}></span> {label}
+                            </div>
+                        ))}
+                    </div>
+                </header>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    <div className="lg:col-span-4 space-y-6">
+                        <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl space-y-6">
+                            <div className="flex items-center gap-2 font-bold text-slate-800 border-b border-slate-100 pb-4">
+                                <Icon name="settings-2" className="w-5 h-5 text-blue-600" /> Client Profile
+                            </div>
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Gender</label>
+                                    <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+                                        {['Male', 'Female'].map(g => (
+                                            <button key={g} onClick={() => setGender(g)} className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${gender === g ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>{g}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Height (Ft)</label>
+                                        <input type="number" value={heightFt} onChange={(e) => setHeightFt(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 outline-none font-bold text-lg" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Height (In)</label>
+                                        <input type="number" value={heightIn} onChange={(e) => setHeightIn(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 outline-none font-bold text-lg" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Weight (Lbs)</label>
+                                    <input type="number" value={weight} onChange={(e) => setWeight(e.target.value)} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 outline-none text-2xl font-black text-slate-900" />
+                                </div>
+                            </div>
+                            <div className="pt-6 border-t border-slate-100 flex items-center justify-between">
+                                <div>
+                                    <p className="text-[10px] text-slate-400 uppercase font-black">BMI Value</p>
+                                    <p className="text-4xl font-black text-slate-900">{bmi.toFixed(1)}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] text-slate-400 uppercase font-black">Category</p>
+                                    <p className={`text-sm font-bold ${bmi >= 30 ? 'text-red-600' : 'text-green-600'}`}>
+                                        {bmi < 18.5 ? 'Underweight' : bmi < 25 ? 'Normal' : bmi < 30 ? 'Overweight' : 'Obese'}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="lg:col-span-8">
+                        <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
+                            <div className="divide-y divide-slate-100 max-h-[650px] overflow-y-auto custom-scrollbar">
+                                {underwritingStatus.map((res, i) => (
+                                    <div key={i} className="p-6 hover:bg-slate-50/80 transition-colors">
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                            <div className="space-y-1">
+                                                <h4 className="font-black text-slate-900 text-xl">{res.company}</h4>
+                                                <div className="flex flex-wrap gap-4">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Best: <span className="text-green-600">{res.maxBest}</span></span>
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Std: <span className="text-amber-600">{res.maxStd}</span></span>
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Max: <span className="text-red-600">{res.maxWeight}</span></span>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col items-end gap-2">
+                                                <p className={`font-black uppercase text-xs px-4 py-1.5 rounded-full border ${res.color} bg-white shadow-sm`}>{res.status}</p>
+                                                <div className="flex flex-col gap-1 items-end">
+                                                    {res.bestDiff > 0 && res.status !== "Decline" && res.maxBest !== "N/A" && (
+                                                        <div className="flex items-center gap-1 text-amber-600 text-[10px] font-black uppercase"><Icon name="arrow-down" className="w-3 h-3" /> {res.bestDiff} lbs Over Best</div>
+                                                    )}
+                                                    {res.stdDiff > 0 && res.status === "Substandard" && res.maxStd !== "N/A" && (
+                                                        <div className="flex items-center gap-1 text-orange-600 text-[10px] font-black uppercase"><Icon name="arrow-down" className="w-3 h-3" /> {res.stdDiff} lbs Over Standard</div>
+                                                    )}
+                                                    {res.diff > 0 && res.maxWeight !== "N/A" && (
+                                                        <div className="bg-red-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase">Decline: {res.diff} lbs Over</div>
+                                                    )}
+                                                    {res.minDiff > 0 && (
+                                                        <div className="bg-red-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase">Under: {res.minDiff} lbs Under</div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const CalculatorView = ({ age, setAge, monthlyBenefit, setMonthlyBenefit, maxBenefit, setMaxBenefit, inflationRate, setInflationRate, inflationType, setInflationType, viewMode, setViewMode, projections }) => {
+            const finalYear = projections[projections.length - 1];
+            return (
+                <div className="space-y-8 fade-in">
+                    <header className="border-b border-slate-200 pb-6">
+                        <h2 className="text-3xl font-black text-slate-900 tracking-tight">Benefit Projection Calculator</h2>
+                        <p className="text-slate-500 font-medium">Visualize long-term benefit pool growth.</p>
+                    </header>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl space-y-6 h-fit">
+                            <div className="flex items-center gap-2 font-bold text-slate-800 border-b border-slate-100 pb-4">
+                                <Icon name="sliders" className="w-5 h-5 text-blue-600" /> Configuration
+                            </div>
+                            <div className="space-y-5">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Age</label>
+                                        <input type="number" value={age} onChange={(e) => setAge(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Rate</label>
+                                        <select value={inflationRate} onChange={(e) => setInflationRate(parseFloat(e.target.value))} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold">
+                                            {[0.01, 0.02, 0.03, 0.04, 0.05].map(v => <option key={v} value={v}>{(v * 100)}%</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Monthly Benefit</label>
+                                    <input type="number" value={monthlyBenefit} onChange={(e) => setMonthlyBenefit(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-black text-blue-600" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Initial Pool</label>
+                                    <input type="number" value={maxBenefit} onChange={(e) => setMaxBenefit(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-black" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Inflation Style</label>
+                                    <div className="flex p-1 bg-slate-100 rounded-xl">
+                                        <button onClick={() => setInflationType('Compound')} className={`flex-1 py-2 px-3 rounded-lg text-[10px] font-black uppercase transition-all ${inflationType === 'Compound' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-50' + ' text-slate-500'}`}>Compound</button>
+                                        <button onClick={() => setInflationType('Simple')} className={`flex-1 py-2 px-3 rounded-lg text-[10px] font-black uppercase transition-all ${inflationType === 'Simple' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-50' + ' text-slate-500'}`}>Simple</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-slate-200 shadow-xl flex flex-col">
+                            <div className="flex-1 min-h-[350px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={projections} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                        <defs>
+                                            <linearGradient id="colorBen" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                                                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="age" hide />
+                                        <YAxis stroke="#94a3b8" fontSize={10} fontWeight="bold" />
+                                        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }} />
+                                        <Area type="monotone" dataKey="benefit" stroke="#3b82f6" fillOpacity={1} fill="url(#colorBen)" strokeWidth={4} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 mt-6 pt-6 border-t border-slate-100">
+                                <div>
+                                    <p className="text-[10px] text-slate-400 font-black uppercase">Final Monthly</p>
+                                    <p className="text-3xl font-black text-slate-900">${finalYear?.benefit.toLocaleString()}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] text-slate-400 font-black uppercase">Final Pool</p>
+                                    <p className="text-3xl font-black text-slate-900">${finalYear?.pool.toLocaleString()}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
+                        <div className="px-8 py-5 bg-slate-50 border-b flex flex-col sm:flex-row justify-between items-center gap-4">
+                            <div className="flex items-center gap-2 font-black text-slate-800 uppercase text-xs tracking-widest">
+                                <Icon name="table" className="w-4 h-4 text-blue-500" /> Benefit Roadmap
+                            </div>
+                            <div className="flex p-1 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                <button onClick={() => setViewMode('Annual')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'Annual' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>Annual</button>
+                                <button onClick={() => setViewMode('Every 5')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'Every 5' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>Every 5 Years</button>
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-slate-50/50 border-b border-slate-100">
+                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Policy Year</th>
+                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Age</th>
+                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Monthly</th>
+                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Total Pool</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {projections.filter((_, i) => viewMode === 'Annual' ? true : i % 5 === 0).map((row) => (
+                                        <tr key={row.year} className="hover:bg-blue-50/40 transition-colors">
+                                            <td className="px-8 py-4 text-xs font-black text-slate-500 uppercase">{row.year === 0 ? 'Issue' : `Year ${row.year}`}</td>
+                                            <td className="px-8 py-4 text-sm font-black text-slate-800 text-center">{row.age}</td>
+                                            <td className="px-8 py-4 text-sm font-black text-blue-600 text-center">${row.benefit.toLocaleString()}</td>
+                                            <td className="px-8 py-4 text-sm font-black text-slate-900 text-right">${row.pool.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('build');
+            const [gender, setGender] = useState('Male');
+            const [heightFt, setHeightFt] = useState(5);
+            const [heightIn, setHeightIn] = useState(7);
+            const [weight, setWeight] = useState(180);
+            const [age, setAge] = useState(46);
+            const [monthlyBenefit, setMonthlyBenefit] = useState(3500);
+            const [maxBenefit, setMaxBenefit] = useState(100000);
+            const [inflationRate, setInflationRate] = useState(0.03); 
+            const [inflationType, setInflationType] = useState('Compound'); 
+            const [viewMode, setViewMode] = useState('Every 5'); 
+
+            const totalInches = (parseInt(heightFt) || 0) * 12 + (parseInt(heightIn) || 0);
+            const bmi = useMemo(() => totalInches ? (weight * 703) / (totalInches * totalInches) : 0, [weight, totalInches]);
+
+            const wellabeChart = {50: {min: 58, max: 186}, 51: {min: 61, max: 190}, 52: {min: 64, max: 194}, 53: {min: 67, max: 198}, 54: {min: 70, max: 202}, 55: {min: 73, max: 206}, 56: {min: 76, max: 210}, 57: {min: 79, max: 214}, 58: {min: 82, max: 218}, 59: {min: 85, max: 222}, 60: {min: 88, max: 226}, 61: {min: 91, max: 230}, 62: {min: 94, max: 234}, 63: {min: 97, max: 239}, 64: {min: 100, max: 244}, 65: {min: 103, max: 249}, 66: {min: 106, max: 254}, 67: {min: 109, max: 259}, 68: {min: 112, max: 264}, 69: {min: 115, max: 269}, 70: {min: 118, max: 274}, 71: {min: 122, max: 279}, 72: {min: 126, max: 285}, 73: {min: 130, max: 291}, 74: {min: 134, max: 297}, 75: {min: 138, max: 303}, 76: {min: 142, max: 309}, 77: {min: 146, max: 315}, 78: {min: 150, max: 323}, 79: {min: 154, max: 331}, 80: {min: 158, max: 339}, 81: {min: 162, max: 347}, 82: {min: 166, max: 355}, 83: {min: 170, max: 363}, 84: {min: 174, max: 372}, 85: {min: 178, max: 380}, 86: {min: 182, max: 388}, 87: {min: 186, max: 396}, 88: {min: 190, max: 402}};
+
+            const underwritingStatus = useMemo(() => {
+                const w = parseInt(weight) || 0;
+                const getCarrierStatus = (company, maxBest, maxStd, maxAccept, minLimit = 0) => {
+                    let status = "Best Rating", color = "text-green-600 border-green-200 bg-green-50", bestDiff = 0, stdDiff = 0, declineDiff = 0, minDiff = 0;
+                    if (w < minLimit) { status = "Decline"; color = "text-red-600 border-red-200 bg-red-50"; minDiff = minLimit - w; }
+                    else if (maxAccept !== 9999 && w > maxAccept) { status = "Decline"; color = "text-red-600 border-red-200 bg-red-50"; declineDiff = w - maxAccept; stdDiff = w - maxStd; bestDiff = w - maxBest; }
+                    else if (maxStd !== 9999 && w > maxStd) { status = "Substandard"; color = "text-red-500 border-red-200 bg-red-50"; stdDiff = w - maxStd; bestDiff = w - maxBest; }
+                    else if (maxBest !== 9999 && w > maxBest) { status = "Standard"; color = "text-amber-600 border-amber-200 bg-amber-50"; bestDiff = w - maxBest; }
+                    return { company, status, color, maxBest: maxBest === 9999 ? "N/A" : `${maxBest} lbs`, maxStd: maxStd === 9999 ? "N/A" : `${maxStd} lbs`, maxWeight: maxAccept === 9999 ? "N/A" : `${maxAccept} lbs`, bestDiff, stdDiff, diff: declineDiff, minDiff };
+                };
+                const wellabeLimits = wellabeChart[totalInches] || { min: 0, max: 9999 };
+                return [
+                    getCarrierStatus("Mutual of Omaha", 185, 223, 255), getCarrierStatus("NGL", 222, 222, 248), getCarrierStatus("Thrivent", 197, 204, 261),
+                    getCarrierStatus("Aetna", 9999, 9999, 9999), getCarrierStatus("Manhattan Life", 9999, 9999, 9999),
+                    getCarrierStatus("Wellabe", wellabeLimits.max, wellabeLimits.max, wellabeLimits.max, wellabeLimits.min),
+                    getCarrierStatus("GTL Recover Cash", 245, 245, 245), getCarrierStatus("Brighthouse", 262, 262, 262),
+                    getCarrierStatus("Global Atlantic", 256, 256, 256), getCarrierStatus("Lincoln", 271, 271, 271),
+                    getCarrierStatus("Nationwide", 270, 270, 270), getCarrierStatus("Securian", 255, 255, 255), getCarrierStatus("OneAmerica", 296, 296, 296)
+                ];
+            }, [weight, totalInches]);
+
+            const projections = useMemo(() => {
+                const data = [];
+                const initialBen = parseFloat(monthlyBenefit) || 0;
+                const initialPool = parseFloat(maxBenefit) || 0;
+                const startAge = parseInt(age) || 0;
+                for (let i = 0; i <= 40; i++) {
+                    let currentBen, currentPool;
+                    if (inflationType === 'Compound') {
+                        currentBen = initialBen * Math.pow(1 + inflationRate, i);
+                        currentPool = initialPool * Math.pow(1 + inflationRate, i);
+                    } else {
+                        currentBen = initialBen * (1 + (inflationRate * i));
+                        currentPool = initialPool * (1 + (inflationRate * i));
+                    }
+                    data.push({ year: i, age: startAge + i, benefit: Math.round(currentBen), pool: Math.round(currentPool) });
+                }
+                return data;
+            }, [age, monthlyBenefit, maxBenefit, inflationRate, inflationType]);
+
+            return (
+                <div className="flex flex-col lg:flex-row min-h-screen">
+                    <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+                    <main className="flex-1 p-6 lg:p-12 max-w-7xl mx-auto w-full">
+                        <div className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex items-center gap-3 text-xs font-black text-slate-400 uppercase tracking-[0.2em]">
+                                <span>Dashboard</span> <Icon name="chevron-right" className="w-3 h-3" /> <span>{activeTab}</span>
+                            </div>
+                        </div>
+
+                        {activeTab === 'build' ? (
+                            <BuildGizmoView gender={gender} setGender={setGender} heightFt={heightFt} setHeightFt={setHeightFt} heightIn={heightIn} setHeightIn={setHeightIn} weight={weight} setWeight={setWeight} bmi={bmi} underwritingStatus={underwritingStatus} />
+                        ) : (
+                            <CalculatorView age={age} setAge={setAge} monthlyBenefit={monthlyBenefit} setMonthlyBenefit={setMonthlyBenefit} maxBenefit={maxBenefit} setMaxBenefit={setMaxBenefit} inflationRate={inflationRate} setInflationRate={setInflationRate} inflationType={inflationType} setInflationType={setInflationType} viewMode={viewMode} setViewMode={setViewMode} projections={projections} />
+                        )}
+
+                        <footer className="mt-20 pt-10 border-t border-slate-200">
+                            <div className="bg-slate-900 text-slate-400 p-10 rounded-[2.5rem] flex flex-col md:flex-row gap-8 items-start shadow-2xl">
+                                <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-xl shadow-blue-600/20">
+                                    <Icon name="shield-check" className="w-8 h-8" />
+                                </div>
+                                <div className="space-y-3">
+                                    <h5 className="font-black text-white uppercase text-xs tracking-widest">Legal & Tax Compliance</h5>
+                                    <p className="text-sm leading-relaxed max-w-3xl">
+                                        Calculations are for illustrative purposes. Client must be advised to consult a qualified tax advisor regarding specific deductions or credits. Weight limits are based on carrier build charts.
+                                    </p>
+                                </div>
+                            </div>
+                        </footer>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
